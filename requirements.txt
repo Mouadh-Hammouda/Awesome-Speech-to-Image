@@ -1,0 +1,4 @@
+numpy
+speechbrain
+torch
+transformers
