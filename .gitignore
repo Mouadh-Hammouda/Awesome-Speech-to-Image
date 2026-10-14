@@ -5,6 +5,9 @@ __pycache__/
 # OS related
 .DS_Store
 
+# Editor related
+.vscode/
+
 # Data related
 data/raw/
 
