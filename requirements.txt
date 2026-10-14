@@ -2,3 +2,4 @@ numpy
 speechbrain
 torch
 transformers
+pillow
