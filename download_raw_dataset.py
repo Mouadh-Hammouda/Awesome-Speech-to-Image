@@ -13,8 +13,11 @@ DATA_DIR = Path("data/raw")
 
 def read_metadata(archive, archive_entry):
     split = archive_entry.name.removeprefix("SpokenCOCO/SpokenCOCO_").removesuffix(".json")
+    metadata_bytes = archive.extractfile(archive_entry).read()
+    # Kept for generate_metadata.py, which reads the caption text from it.
+    (DATA_DIR / f"SpokenCOCO_{split}.json").write_bytes(metadata_bytes)
     wav_metadata = {}
-    for image_entry in json.load(archive.extractfile(archive_entry))["data"]:
+    for image_entry in json.loads(metadata_bytes)["data"]:
         for caption_number, caption in enumerate(image_entry["captions"]):
             wav_metadata[caption["wav"]] = (split, image_entry["image"], caption_number)
     return wav_metadata
