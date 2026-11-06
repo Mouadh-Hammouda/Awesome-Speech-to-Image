@@ -1,10 +1,7 @@
 import csv
 import json
 from pathlib import Path
-
-RAW_DIR = Path("data/raw")
-OUTPUT_DIR = Path("data")
-SPLITS = ["train", "val"]
+from utils import DATA_DIR, RAW_DIR, SPLITS
 
 
 def read_captions(split):
@@ -22,7 +19,7 @@ def write_metadata(split):
     captions = read_captions(split)
     # Same sorted wav order as extract_sense_features.py, so row i matches row i of {split}_x.npy.
     wav_files = sorted((RAW_DIR / split).glob("*.wav"))
-    with open(OUTPUT_DIR / f"{split}_meta.csv", "w", newline="") as file:
+    with open(DATA_DIR / f"{split}_meta.csv", "w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(["row", "audio_filename", "image_id", "caption"])
         for row, wav_file in enumerate(wav_files):
