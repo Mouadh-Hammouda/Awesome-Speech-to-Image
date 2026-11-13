@@ -14,7 +14,7 @@ from utils import DATA_DIR
 
 SPLIT = "val"
 # The TRAIN_CLASSES the model to debug was trained on; None is the model trained on every image.
-MODEL_CLASSES = None
+MODEL_CLASSES = ("CAT", "DOG")
 # Images that mention none of the CLASSES are OTHER.
 CLASS_NAMES = [*CLASSES, "OTHER"]
 HOVER_PIXELS = 6
