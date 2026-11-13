@@ -5,3 +5,4 @@ transformers
 pillow
 matplotlib
 scikit-learn
+torchsummary

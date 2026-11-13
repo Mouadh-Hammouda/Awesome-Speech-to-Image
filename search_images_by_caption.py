@@ -4,10 +4,12 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import RadioButtons, TextBox
 from PIL import Image
 from caption_data import centre_crop, load_images, tokenise
-from caption_models import MODEL_FILE, CaptionTextEncoder, ImageEncoderCNN
+from caption_models import CaptionTextEncoder, ImageEncoderCNN, model_file
 from utils import RAW_DIR, get_device
 
 SEARCH_SPLITS = ("val", "train", "test")
+# The TRAIN_CLASSES the model to search with was trained on; None is the model trained on every image.
+MODEL_CLASSES = None
 BATCH_SIZE = 128
 TOP_K = 10
 GRID_ROWS, GRID_COLUMNS = 2, 5
@@ -15,8 +17,8 @@ GRID_ROWS, GRID_COLUMNS = 2, 5
 device = get_device()
 
 
-def load_encoders():
-    checkpoint = torch.load(MODEL_FILE, map_location=device)
+def load_encoders(class_names=None):
+    checkpoint = torch.load(model_file(class_names), map_location=device)
     vocabulary = checkpoint["vocabulary"]
     image_encoder = ImageEncoderCNN().to(device)
     text_encoder = CaptionTextEncoder(len(vocabulary) + 2).to(device)
@@ -31,10 +33,11 @@ def clean_caption(caption):
 
 
 @torch.no_grad()
-def embed_split(image_encoder, split):
-    embeddings_file = MODEL_FILE.parent / f"{split}_image_embeddings.pt"
+def embed_split(image_encoder, split, class_names=None):
+    trained_file = model_file(class_names)
+    embeddings_file = trained_file.parent / f"{split}_image_embeddings.pt"
     # Saved embeddings are out of date once the model has been retrained.
-    if embeddings_file.exists() and embeddings_file.stat().st_mtime > MODEL_FILE.stat().st_mtime:
+    if embeddings_file.exists() and embeddings_file.stat().st_mtime > trained_file.stat().st_mtime:
         saved = torch.load(embeddings_file, map_location=device)
         image_ids, image_embeddings = saved["image_ids"], saved["image_embeddings"]
     else:
@@ -63,9 +66,9 @@ def show_matches(axes, image_files, scores):
 
 def main():
     print("Loading model...", flush=True)
-    image_encoder, text_encoder, vocabulary = load_encoders()
+    image_encoder, text_encoder, vocabulary = load_encoders(MODEL_CLASSES)
     # Fetched the first time each split is selected, so startup only pays for the first one.
-    embedded_splits = {SEARCH_SPLITS[0]: embed_split(image_encoder, SEARCH_SPLITS[0])}
+    embedded_splits = {SEARCH_SPLITS[0]: embed_split(image_encoder, SEARCH_SPLITS[0], MODEL_CLASSES)}
 
     figure, axes = plt.subplots(GRID_ROWS, GRID_COLUMNS, figsize=(15, 8))
     figure.canvas.manager.set_window_title("Caption search")
@@ -96,7 +99,7 @@ def main():
             figure.suptitle(f"Loading {split} images...")
             figure.canvas.draw()
             figure.canvas.flush_events()
-            embedded_splits[split] = embed_split(image_encoder, split)
+            embedded_splits[split] = embed_split(image_encoder, split, MODEL_CLASSES)
             figure.suptitle(f"{split} ready, type a caption below and press Enter")
             figure.canvas.draw_idle()
         search(text_box.text)

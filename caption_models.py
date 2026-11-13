@@ -1,10 +1,19 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
-from caption_data import PADDING
+from caption_data import IMAGE_SIZE, PADDING
 
-MODEL_FILE = Path("results/image_to_caption/model.pt")
+from torchsummary import summary
+
+RESULTS_DIR = Path("results/image_to_caption")
 EMBEDDING_SIZE = 256
+
+
+def model_file(class_names=None):
+    # A model trained on only some classes gets its own folder, e.g. cat_dog/, so it never overwrites another.
+    if class_names is None:
+        return RESULTS_DIR / "model.pt"
+    return RESULTS_DIR / "_".join(sorted(name.lower() for name in class_names)) / "model.pt"
 
 
 class ImageEncoderCNN(nn.Module):
@@ -35,3 +44,7 @@ class CaptionTextEncoder(nn.Module):
         word_counts = (token_ids != PADDING).sum(dim=1, keepdim=True).clamp(min=1)
         mean_embedding = self.word_embeddings(token_ids).sum(dim=1) / word_counts
         return F.normalize(self.projection(mean_embedding), dim=-1)
+
+
+if __name__ == "__main__":
+    summary(ImageEncoderCNN(), (3, IMAGE_SIZE, IMAGE_SIZE), device="cpu")

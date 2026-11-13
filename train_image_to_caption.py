@@ -2,14 +2,16 @@ import random
 import torch
 import torch.nn.functional as F
 from caption_data import CaptionSplit, augment, centre_crop
-from caption_models import MODEL_FILE, CaptionTextEncoder, ImageEncoderCNN
+from caption_models import CaptionTextEncoder, ImageEncoderCNN, model_file
 from utils import get_device
 
 EPOCHS = 60
-BATCH_SIZE = 128
-LEARNING_RATE = 1e-3
+BATCH_SIZE = 256
+LEARNING_RATE = 1e-2
 TEMPERATURE = 0.05
 RECALL_KS = (1, 5, 10)
+# Names from caption_data.CLASSES to train and validate on, e.g. ("CAT", "DOG"); None trains on every image.
+TRAIN_CLASSES = ("CAT", "DOG")
 
 torch.manual_seed(53)
 random.seed(53)
@@ -51,24 +53,44 @@ def evaluate(image_encoder, text_encoder, data):
 
 
 def main():
-    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    output_file = model_file(TRAIN_CLASSES)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     print("Loading images...", flush=True)
-    train_data = CaptionSplit("train")
-    val_data = CaptionSplit("val", train_data.vocabulary)
+    train_data = CaptionSplit("train", class_names=TRAIN_CLASSES)
+    val_data = CaptionSplit("val", train_data.vocabulary, TRAIN_CLASSES)
     image_encoder = ImageEncoderCNN().to(device)
     text_encoder = CaptionTextEncoder(len(train_data.vocabulary) + 2).to(device)
     optimizer = torch.optim.Adam([*image_encoder.parameters(), *text_encoder.parameters()], lr=LEARNING_RATE)
+    # Decays the learning rate from LEARNING_RATE towards zero along a cosine curve, stepped once per epoch.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    print(f"classes: {', '.join(TRAIN_CLASSES) if TRAIN_CLASSES else 'all'} | train images: {len(train_data.images):,} | val images: {len(val_data.images):,}", flush=True)
     print(f"vocabulary: {len(train_data.vocabulary):,} words", flush=True)
 
+    # The latest training state, saved every epoch so an interrupted run picks up where it left off.
+    checkpoint_file = output_file.with_name("checkpoint.pt")
     best_recall = -1.0
-    for epoch in range(1, EPOCHS + 1):
+    start_epoch = 1
+    if checkpoint_file.exists():
+        checkpoint = torch.load(checkpoint_file, map_location=device)
+        image_encoder.load_state_dict(checkpoint["image_encoder"])
+        text_encoder.load_state_dict(checkpoint["text_encoder"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        scheduler.load_state_dict(checkpoint["scheduler"])
+        best_recall = checkpoint["best_recall"]
+        start_epoch = checkpoint["epoch"] + 1
+        print(f"resuming from {checkpoint_file} at epoch {start_epoch} (best R@10 {best_recall:.1f})", flush=True)
+
+    for epoch in range(start_epoch, EPOCHS + 1):
+        learning_rate = scheduler.get_last_lr()[0]
         train_loss = train_epoch(image_encoder, text_encoder, optimizer, train_data)
+        scheduler.step()
         recalls = evaluate(image_encoder, text_encoder, val_data)
-        print(f"epoch {epoch} | loss {train_loss:.3f} | text->image R@1/5/10 " + "/".join(f"{value:.1f}" for value in recalls), flush=True)
+        print(f"epoch {epoch} | lr {learning_rate:.2e} | loss {train_loss:.3f} | text->image R@1/5/10 " + "/".join(f"{value:.1f}" for value in recalls), flush=True)
         if recalls[-1] > best_recall:
             best_recall = recalls[-1]
-            torch.save({"image_encoder": image_encoder.state_dict(), "text_encoder": text_encoder.state_dict(), "vocabulary": train_data.vocabulary}, MODEL_FILE)
-            print(f"saved best model (R@10 {best_recall:.1f})", flush=True)
+            torch.save({"image_encoder": image_encoder.state_dict(), "text_encoder": text_encoder.state_dict(), "vocabulary": train_data.vocabulary}, output_file)
+            print(f"saved best model to {output_file} (R@10 {best_recall:.1f})", flush=True)
+        torch.save({"image_encoder": image_encoder.state_dict(), "text_encoder": text_encoder.state_dict(), "optimizer": optimizer.state_dict(), "scheduler": scheduler.state_dict(), "epoch": epoch, "best_recall": best_recall}, checkpoint_file)
 
 
 if __name__ == "__main__":
