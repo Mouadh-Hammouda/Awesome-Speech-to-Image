@@ -11,6 +11,16 @@ IMAGE_SIZE = 128
 MIN_WORD_COUNT = 5
 MAX_CAPTION_WORDS = 40
 PADDING, UNKNOWN = 0, 1
+# Class name -> caption words that put an image in that class.
+CLASSES = {
+    "CAT": {"CAT", "CATS", "KITTEN", "KITTENS", "KITTY"},
+    "DOG": {"DOG", "DOGS", "PUPPY", "PUPPIES"},
+}
+
+
+def class_of(words):
+    # The first class whose words appear, else len(CLASSES) for none.
+    return next((index for index, class_words in enumerate(CLASSES.values()) if words & class_words), len(CLASSES))
 
 
 def build_vocabulary(captions):
@@ -33,10 +43,20 @@ def load_images(split, image_ids):
     return torch.from_numpy(np.stack(images)).permute(0, 3, 1, 2)
 
 
+def keep_images_of_classes(rows, class_names):
+    # An image is kept, with all its captions, if any of its captions mentions one of the classes.
+    class_words = set().union(*(CLASSES[name] for name in class_names))
+    kept_image_ids = {row["image_id"] for row in rows if class_words & set(row["caption"].split())}
+    return [row for row in rows if row["image_id"] in kept_image_ids]
+
+
 class CaptionSplit:
-    def __init__(self, split, vocabulary=None):
+    # class_names restricts the split to images of those CLASSES; None keeps every image.
+    def __init__(self, split, vocabulary=None, class_names=None):
         with open(DATA_DIR / f"{split}_meta.csv", newline="") as file:
             rows = list(csv.DictReader(file))
+        if class_names is not None:
+            rows = keep_images_of_classes(rows, class_names)
         captions = [row["caption"] for row in rows]
         self.vocabulary = vocabulary or build_vocabulary(captions)
         self.captions = tokenise(captions, self.vocabulary)

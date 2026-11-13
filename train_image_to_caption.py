@@ -2,7 +2,7 @@ import random
 import torch
 import torch.nn.functional as F
 from caption_data import CaptionSplit, augment, centre_crop
-from caption_models import MODEL_FILE, CaptionTextEncoder, ImageEncoderCNN
+from caption_models import CaptionTextEncoder, ImageEncoderCNN, model_file
 from utils import get_device
 
 EPOCHS = 60
@@ -10,6 +10,8 @@ BATCH_SIZE = 128
 LEARNING_RATE = 1e-3
 TEMPERATURE = 0.05
 RECALL_KS = (1, 5, 10)
+# Names from caption_data.CLASSES to train and validate on, e.g. ("CAT", "DOG"); None trains on every image.
+TRAIN_CLASSES = ("CAT", "DOG")
 
 torch.manual_seed(53)
 random.seed(53)
@@ -51,13 +53,15 @@ def evaluate(image_encoder, text_encoder, data):
 
 
 def main():
-    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    output_file = model_file(TRAIN_CLASSES)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     print("Loading images...", flush=True)
-    train_data = CaptionSplit("train")
-    val_data = CaptionSplit("val", train_data.vocabulary)
+    train_data = CaptionSplit("train", class_names=TRAIN_CLASSES)
+    val_data = CaptionSplit("val", train_data.vocabulary, TRAIN_CLASSES)
     image_encoder = ImageEncoderCNN().to(device)
     text_encoder = CaptionTextEncoder(len(train_data.vocabulary) + 2).to(device)
     optimizer = torch.optim.Adam([*image_encoder.parameters(), *text_encoder.parameters()], lr=LEARNING_RATE)
+    print(f"classes: {', '.join(TRAIN_CLASSES) if TRAIN_CLASSES else 'all'} | train images: {len(train_data.images):,} | val images: {len(val_data.images):,}", flush=True)
     print(f"vocabulary: {len(train_data.vocabulary):,} words", flush=True)
 
     best_recall = -1.0
@@ -67,8 +71,8 @@ def main():
         print(f"epoch {epoch} | loss {train_loss:.3f} | text->image R@1/5/10 " + "/".join(f"{value:.1f}" for value in recalls), flush=True)
         if recalls[-1] > best_recall:
             best_recall = recalls[-1]
-            torch.save({"image_encoder": image_encoder.state_dict(), "text_encoder": text_encoder.state_dict(), "vocabulary": train_data.vocabulary}, MODEL_FILE)
-            print(f"saved best model (R@10 {best_recall:.1f})", flush=True)
+            torch.save({"image_encoder": image_encoder.state_dict(), "text_encoder": text_encoder.state_dict(), "vocabulary": train_data.vocabulary}, output_file)
+            print(f"saved best model to {output_file} (R@10 {best_recall:.1f})", flush=True)
 
 
 if __name__ == "__main__":

@@ -6,17 +6,16 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
-from caption_data import tokenise
+from sklearn.metrics import ConfusionMatrixDisplay
+from caption_data import CLASSES, class_of, tokenise
 from search_images_by_caption import BATCH_SIZE, device, embed_split, load_encoders
 from train_image_to_caption import TEMPERATURE
 from utils import DATA_DIR
 
 SPLIT = "val"
-# Class caption -> caption words that put an image in that class. Everything else is OTHER.
-CLASSES = {
-    "CAT": {"CAT", "CATS", "KITTEN", "KITTENS", "KITTY"},
-    "DOG": {"DOG", "DOGS", "PUPPY", "PUPPIES"},
-}
+# The TRAIN_CLASSES the model to debug was trained on; None is the model trained on every image.
+MODEL_CLASSES = None
+# Images that mention none of the CLASSES are OTHER.
 CLASS_NAMES = [*CLASSES, "OTHER"]
 HOVER_PIXELS = 6
 
@@ -24,11 +23,6 @@ HOVER_PIXELS = 6
 def read_captions(split):
     with open(DATA_DIR / f"{split}_meta.csv", newline="") as file:
         return [(row["image_id"], row["caption"]) for row in csv.DictReader(file)]
-
-
-def class_of(words):
-    # The first class whose words appear, else OTHER.
-    return next((index for index, class_words in enumerate(CLASSES.values()) if words & class_words), len(CLASSES))
 
 
 def true_classes(image_files):
@@ -48,12 +42,18 @@ def class_embeddings(text_encoder, vocabulary):
 
 @torch.no_grad()
 def main():
-    image_encoder, text_encoder, vocabulary = load_encoders()
-    image_files, image_embeddings = embed_split(image_encoder, SPLIT)
+    image_encoder, text_encoder, vocabulary = load_encoders(MODEL_CLASSES)
+    image_files, image_embeddings = embed_split(image_encoder, SPLIT, MODEL_CLASSES)
     labels = true_classes(image_files)
 
-    # Each image sits at the softmax-weighted average of the class anchors on a circle.
     probabilities = (image_embeddings.to(device) @ class_embeddings(text_encoder, vocabulary).T / TEMPERATURE).softmax(dim=1).cpu()
+    plot_class_circle(image_files, probabilities, labels)
+    plot_confusion_matrix(probabilities, labels)
+    plt.show()
+
+
+def plot_class_circle(image_files, probabilities, labels):
+    # Each image sits at the softmax-weighted average of the class anchors on a circle.
     angles = [math.pi / 2 - 2 * math.pi * index / len(CLASS_NAMES) for index in range(len(CLASS_NAMES))]
     anchors = torch.tensor([[math.cos(angle), math.sin(angle)] for angle in angles])
     positions = probabilities @ anchors
@@ -70,7 +70,20 @@ def main():
     axis.axis("off")
     axis.legend()
     show_image_on_hover(figure, axis, image_files, positions)
-    plt.show()
+
+
+def plot_confusion_matrix(probabilities, labels):
+    # Rows are normalised so each shows how that true class is predicted, despite OTHER dominating the counts.
+    display = ConfusionMatrixDisplay.from_predictions(
+        labels,
+        probabilities.argmax(dim=1),
+        labels=list(range(len(CLASS_NAMES))),
+        display_labels=CLASS_NAMES,
+        normalize="true",
+        values_format=".2f",
+        cmap="Blues",
+    )
+    display.ax_.set_title(f"{SPLIT} confusion matrix")
 
 
 def show_image_on_hover(figure, axis, image_files, positions):
