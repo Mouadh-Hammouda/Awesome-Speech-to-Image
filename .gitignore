@@ -9,7 +9,8 @@ __pycache__/
 .vscode/
 
 # Data related
-data/raw/
+data/
+results/
 
 # Model related
 wav2vec2_checkpoints/

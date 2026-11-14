@@ -1,5 +1,8 @@
 numpy
-speechbrain
 torch
+tqdm
 transformers
 pillow
+matplotlib
+torchvision
+sentence-transformers

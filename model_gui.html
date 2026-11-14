@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caption image search</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f5f2; color: #202620; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 1200px; margin: 64px auto; padding: 0 24px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 42px); letter-spacing: -1px; }
+    .intro { color: #596259; margin: 0 0 32px; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; }
+    .search { display: flex; gap: 12px; }
+    input { flex: 1; min-width: 0; padding: 14px 16px; border: 1px solid #b7c1b7; border-radius: 8px; font: inherit; background: white; }
+    button { border: 0; border-radius: 8px; padding: 14px 28px; background: #24583e; color: white; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    input:focus-visible, button:focus-visible { outline: 3px solid #8abc99; outline-offset: 3px; }
+    #status { min-height: 24px; color: #596259; margin: 20px 0; }
+    #status.error { color: #a02d25; }
+    #results { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+    figure { margin: 0; overflow: hidden; background: white; border: 1px solid #dde3dc; border-radius: 10px; }
+    figure img { width: 100%; height: 220px; display: block; object-fit: contain; background: #eaede7; }
+    figcaption { padding: 14px; }
+    .score { display: block; color: #596259; font-size: 14px; margin-top: 4px; }
+    @media (max-width: 540px) { main { margin-top: 32px; } .search { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Find an image with your words</h1>
+    <p class="intro">Write any caption and search the model’s image collection.</p>
+    <form id="search-form">
+      <label for="caption">Your caption</label>
+      <div class="search">
+        <input id="caption" type="text" placeholder="A dog running along a sunny beach" required autofocus autocomplete="off">
+        <button id="search-button" type="submit">Search images</button>
+      </div>
+    </form>
+    <p id="status" role="status" aria-live="polite">Your matching images will appear here.</p>
+    <section id="results" aria-label="Matching images"></section>
+  </main>
+  <script>
+    const form = document.querySelector('#search-form');
+    const input = document.querySelector('#caption');
+    const button = document.querySelector('#search-button');
+    const status = document.querySelector('#status');
+    const results = document.querySelector('#results');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const caption = input.value.trim();
+      if (!caption) {
+        input.focus();
+        return;
+      }
+      button.disabled = true;
+      input.disabled = true;
+      results.replaceChildren();
+      status.className = '';
+      status.textContent = 'Searching… The first search can take a little longer.';
+      try {
+        const response = await fetch('/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caption }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        data.results.forEach((match, index) => {
+          const card = document.createElement('figure');
+          const image = document.createElement('img');
+          image.src = `/image/${encodeURIComponent(match.image_id)}`;
+          image.alt = `Match ${index + 1} for ${caption}`;
+          const label = document.createElement('figcaption');
+          label.textContent = `#${index + 1} · ${match.image_id}`;
+          const score = document.createElement('span');
+          score.className = 'score';
+          score.textContent = `Cosine similarity: ${match.score.toFixed(3)}`;
+          label.append(score);
+          card.append(image, label);
+          results.append(card);
+        });
+        status.textContent = `${data.results.length} matches for “${caption}”`;
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+        input.disabled = false;
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
