@@ -22,7 +22,8 @@ IMAGE_MEAN = (0.5, 0.5, 0.5)
 IMAGE_STD = (0.5, 0.5, 0.5)
 TEXT_EMBEDDING_SIZE = int(os.getenv("TEXT_EMBEDDING_SIZE", "1024"))
 CAPTION_MODEL_NAME = os.getenv("CAPTION_MODEL_NAME", "BAAI/bge-m3")
-CAPTION_DEVICE = os.getenv("CAPTION_DEVICE", "cpu")
+# None lets SentenceTransformer select an available GPU, otherwise CPU.
+CAPTION_DEVICE = os.getenv("CAPTION_DEVICE")
 CAPTION_BATCH_SIZE = int(os.getenv("CAPTION_BATCH_SIZE", "16"))
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
