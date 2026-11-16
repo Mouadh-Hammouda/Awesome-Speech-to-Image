@@ -10,7 +10,11 @@ __pycache__/
 
 # Data related
 data/raw/
+data/features/
 data/*.npy
 
 # Model related
 wav2vec2_checkpoints/
+
+# Checkpoints, logs and plots
+results/
