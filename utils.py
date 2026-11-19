@@ -1,11 +1,19 @@
 import csv
 
-from config import DATA_DIR, IMAGE_MEAN, IMAGE_SIZE, IMAGE_STD, RAW_DIR
+from config import (
+    CAPTION_BASE_EMBEDDING_SIZE, DATA_DIR, IMAGE_MEAN, IMAGE_SIZE,
+    IMAGE_STD, RAW_DIR, TEXT_EMBEDDING_SIZE,
+)
 
 
 def load_metadata(split):
     with open(DATA_DIR / f"{split}_meta.csv", newline="", encoding="utf-8") as file:
         return list(csv.DictReader(file))
+
+
+def caption_embedding_path(split, dimensions=TEXT_EMBEDDING_SIZE):
+    suffix = "" if dimensions == CAPTION_BASE_EMBEDDING_SIZE else f"_{dimensions}"
+    return DATA_DIR / f"{split}_bge_m3{suffix}.npy"
 
 
 def get_image_path(split, image_id):

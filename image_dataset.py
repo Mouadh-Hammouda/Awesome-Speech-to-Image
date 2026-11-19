@@ -6,8 +6,8 @@ from PIL import Image
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 
-from config import DATA_DIR, IMAGE_CACHE_DIR, IMAGE_SIZE, TEXT_EMBEDDING_SIZE
-from utils import get_image_path, get_image_transform, load_metadata
+from config import IMAGE_CACHE_DIR, IMAGE_SIZE, TEXT_EMBEDDING_SIZE
+from utils import caption_embedding_path, get_image_path, get_image_transform, load_metadata
 
 image_transform = get_image_transform()
 
@@ -16,7 +16,7 @@ class ImageCaptionDataset(Dataset):
     def __init__(self, split):
         self.split = split
         self.rows = load_metadata(split)
-        embeddings = np.load(DATA_DIR / f"{split}_bge_m3.npy", allow_pickle=False)
+        embeddings = np.load(caption_embedding_path(split), allow_pickle=False)
         if embeddings.shape != (len(self.rows), TEXT_EMBEDDING_SIZE):
             raise ValueError("Metadata and embedding shapes disagree")
         self.targets = torch.from_numpy(embeddings).float()

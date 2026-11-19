@@ -4,10 +4,9 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from sentence_transformers import SentenceTransformer
-
+from encode_captions import load_caption_encoder
 from config import (
-    CAPTION_DEVICE, CAPTION_MODEL_NAME, CHECKPOINT_PATH, GUI_PORT,
+    CHECKPOINT_PATH, GUI_PORT,
     RETRIEVAL_SPLIT, RETRIEVAL_TOP_K,
 )
 from utils import get_image_path, load_image_gallery
@@ -34,7 +33,7 @@ class CaptionRetriever:
                     raise FileNotFoundError(f"Train the model first. Missing checkpoint: {CHECKPOINT_PATH}")
                 self.dataset, self.image_features = load_image_gallery(RETRIEVAL_SPLIT)
             if self.encoder is None:
-                self.encoder = SentenceTransformer(CAPTION_MODEL_NAME, device=CAPTION_DEVICE)
+                self.encoder = load_caption_encoder()
             return retrieve_images(caption, self.dataset.image_ids, self.image_features, self.encoder)
 
 

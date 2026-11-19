@@ -50,11 +50,10 @@ def evaluate_recall_at_1(model, dataset, device):
 
 
 def main():
-    torch.manual_seed(SEED)
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ensure_caption_embeddings()
+    torch.manual_seed(SEED)
     train_dataset = ImageCaptionDataset("train")
     val_dataset = ImageCaptionDataset("val")
 

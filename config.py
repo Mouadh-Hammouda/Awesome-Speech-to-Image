@@ -20,19 +20,27 @@ IMAGE_DOWNLOAD_ATTEMPTS = int(os.getenv("IMAGE_DOWNLOAD_ATTEMPTS", "3"))
 IMAGE_SIZE = int(os.getenv("IMAGE_SIZE", "128"))
 IMAGE_MEAN = (0.5, 0.5, 0.5)
 IMAGE_STD = (0.5, 0.5, 0.5)
-TEXT_EMBEDDING_SIZE = int(os.getenv("TEXT_EMBEDDING_SIZE", "1024"))
+CAPTION_BASE_EMBEDDING_SIZE = 1024
+TEXT_EMBEDDING_SIZE = int(os.getenv("TEXT_EMBEDDING_SIZE", "150"))
 CAPTION_MODEL_NAME = os.getenv("CAPTION_MODEL_NAME", "BAAI/bge-m3")
 # None lets SentenceTransformer select an available GPU, otherwise CPU.
 CAPTION_DEVICE = os.getenv("CAPTION_DEVICE")
 CAPTION_BATCH_SIZE = int(os.getenv("CAPTION_BATCH_SIZE", "16"))
+CAPTION_PROJECTION_PATH = Path(os.getenv(
+    "CAPTION_PROJECTION_PATH", str(RESULTS_DIR / f"bge_m3_projection_{TEXT_EMBEDDING_SIZE}.pt")
+))
+PROJECTION_EPOCHS = int(os.getenv("PROJECTION_EPOCHS", "10"))
+PROJECTION_BATCH_SIZE = int(os.getenv("PROJECTION_BATCH_SIZE", "256"))
+PROJECTION_LEARNING_RATE = float(os.getenv("PROJECTION_LEARNING_RATE", "0.0001"))
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
 EPOCHS = int(os.getenv("EPOCHS", "60"))
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
 SEED = int(os.getenv("SEED", "53"))
 
-CHECKPOINT_PATH = Path(os.getenv("CHECKPOINT_PATH", str(RESULTS_DIR / "custom_cnn_best.pt")))
-HISTORY_PATH = RESULTS_DIR / "training_history.csv"
+EMBEDDING_SUFFIX = "" if TEXT_EMBEDDING_SIZE == CAPTION_BASE_EMBEDDING_SIZE else f"_{TEXT_EMBEDDING_SIZE}"
+CHECKPOINT_PATH = Path(os.getenv("CHECKPOINT_PATH", str(RESULTS_DIR / f"custom_cnn{EMBEDDING_SUFFIX}_best.pt")))
+HISTORY_PATH = RESULTS_DIR / f"training_history{EMBEDDING_SUFFIX}.csv"
 DEBUG_DIR = RESULTS_DIR / "debug"
 DEBUG_SPLIT = os.getenv("DEBUG_SPLIT", "val")
 # Keyword groups for the plots; these are approximate labels from captions.

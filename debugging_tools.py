@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from config import (
-    DATA_DIR, DEBUG_CLASSES, DEBUG_DIR, DEBUG_FEATURES, DEBUG_SAMPLES_PER_CLASS,
+    DEBUG_CLASSES, DEBUG_DIR, DEBUG_FEATURES, DEBUG_SAMPLES_PER_CLASS,
     DEBUG_SPLIT, HISTORY_PATH, SEED,
 )
-from utils import load_image_gallery, load_metadata
+from utils import caption_embedding_path, load_image_gallery, load_metadata
 
 
 def caption_groups(rows):
@@ -25,7 +25,7 @@ def caption_groups(rows):
 
 def training_class_prototypes():
     rows = load_metadata("train")
-    targets = np.load(DATA_DIR / "train_bge_m3.npy", mmap_mode="r")
+    targets = np.load(caption_embedding_path("train"), mmap_mode="r")
     groups = caption_groups(rows)
     prototypes = []
     for label, name in enumerate(DEBUG_CLASSES):
