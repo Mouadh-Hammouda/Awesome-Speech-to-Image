@@ -3,3 +3,6 @@ speechbrain
 torch
 transformers
 pillow
+matplotlib
+scikit-learn
+torchsummary
