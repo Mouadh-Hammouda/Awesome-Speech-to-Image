@@ -45,7 +45,10 @@ source .venv/bin/activate
 python3 training/train_image_to_caption.py
 python3 retrieval/search_images_by_caption.py
 python3 tools/debugging.py
+python3 tools/semantic_map.py
 ```
+
+The semantic map projects the val images and their captions into one 2-D plot (t-SNE or PCA), coloured by class, and saves it next to the model as `val_semantic_map.png`. Hovering a point shows its image and caption. The model, classes shown, projection method, and class-vote threshold are constants at the top of `tools/semantic_map.py`.
 
 To print the image CNN architecture, run `python3 models/image_cnn.py`.
 
@@ -71,6 +74,7 @@ retrieval/
     search_images_by_caption.py   Caption search interface
 tools/
     debugging.py                  Diagnostic plots and confusion matrix
+    semantic_map.py               2-D map of images and captions, coloured by class
 ```
 
 Dataset files remain in `data/`, and model checkpoints remain in `results/`.
