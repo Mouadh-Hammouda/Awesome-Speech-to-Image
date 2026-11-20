@@ -1,10 +1,16 @@
 import json
+import sys
 import tarfile
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from utils import RAW_DIR, print_progress
+
+# Allow direct execution from the repository root: python3 data_processing/download_raw_dataset.py.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from common import RAW_DIR, print_progress
 
 SPOKENCOCO_URL = "https://data.csail.mit.edu/placesaudio/SpokenCOCO.tar.gz"
 COCO_IMAGES_URL = "http://images.cocodataset.org"
@@ -17,7 +23,7 @@ IMAGE_DOWNLOAD_ATTEMPTS = 3
 def read_metadata(archive, archive_entry):
     split = archive_entry.name.removeprefix("SpokenCOCO/SpokenCOCO_").removesuffix(".json")
     metadata_bytes = archive.extractfile(archive_entry).read()
-    # Kept for generate_metadata.py, which reads the caption text from it.
+    # Kept for data_processing/generate_metadata.py, which reads the caption text from it.
     (RAW_DIR / f"SpokenCOCO_{split}.json").write_bytes(metadata_bytes)
     wav_metadata = {}
     for image_entry in json.loads(metadata_bytes)["data"]:

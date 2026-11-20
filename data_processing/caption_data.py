@@ -4,18 +4,17 @@ import random
 import torch
 from collections import Counter
 from PIL import Image
-from utils import DATA_DIR, RAW_DIR
-
-LOAD_SIZE = 140
-IMAGE_SIZE = 128
-MIN_WORD_COUNT = 5
-MAX_CAPTION_WORDS = 40
-PADDING, UNKNOWN = 0, 1
-# Class name -> caption words that put an image in that class.
-CLASSES = {
-    "CAT": {"CAT", "CATS", "KITTEN", "KITTENS", "KITTY"},
-    "DOG": {"DOG", "DOGS", "PUPPY", "PUPPIES"},
-}
+from common import (
+    CLASSES,
+    DATA_DIR,
+    IMAGE_SIZE,
+    LOAD_SIZE,
+    MAX_CAPTION_WORDS,
+    MIN_WORD_COUNT,
+    PADDING,
+    RAW_DIR,
+    UNKNOWN,
+)
 
 
 def class_of(words):

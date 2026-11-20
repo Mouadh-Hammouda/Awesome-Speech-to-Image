@@ -1,5 +1,12 @@
 import csv
 import math
+import sys
+from pathlib import Path
+
+# Allow direct execution from the repository root: python3 tools/debugging.py.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -7,10 +14,10 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
 from sklearn.metrics import ConfusionMatrixDisplay
-from caption_data import CLASSES, class_of, tokenise
-from search_images_by_caption import BATCH_SIZE, device, embed_split, load_encoders
-from train_image_to_caption import TEMPERATURE
-from utils import DATA_DIR
+from data_processing.caption_data import CLASSES, class_of, tokenise
+from retrieval.caption_retrieval import BATCH_SIZE, device, embed_split, load_encoders
+from training.train_image_to_caption import TEMPERATURE
+from common import DATA_DIR
 
 SPLIT = "val"
 # The TRAIN_CLASSES the model to debug was trained on; None is the model trained on every image.

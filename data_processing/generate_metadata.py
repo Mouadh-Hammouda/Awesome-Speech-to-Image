@@ -1,11 +1,17 @@
 import csv
 import json
+import sys
 from pathlib import Path
-from utils import DATA_DIR, RAW_DIR, SPLITS
+
+# Allow direct execution from the repository root: python3 data_processing/generate_metadata.py.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from common import DATA_DIR, RAW_DIR, SPLITS
 
 
 def read_captions(split):
-    # Same (image_id, caption_number) naming as download_raw_dataset.py.
+    # Same (image_id, caption_number) naming as data_processing/download_raw_dataset.py.
     with open(RAW_DIR / f"SpokenCOCO_{split}.json") as file:
         image_entries = json.load(file)["data"]
     return {

@@ -1,16 +1,23 @@
 import random
+import sys
+from pathlib import Path
+
+# Allow direct execution from the repository root: python3 training/train_image_to_caption.py.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import torch
 import torch.nn.functional as F
-from caption_data import CaptionSplit, augment, centre_crop
-from caption_models import CaptionTextEncoder, ImageEncoderCNN, model_file
-from utils import get_device
+from data_processing.caption_data import CaptionSplit, augment, centre_crop
+from common import TEMPERATURE, get_device, model_file
+from models.caption_text_encoder import CaptionTextEncoder
+from models.image_cnn import ImageEncoderCNN
 
 EPOCHS = 60
 BATCH_SIZE = 256
 LEARNING_RATE = 1e-2
-TEMPERATURE = 0.05
 RECALL_KS = (1, 5, 10)
-# Names from caption_data.CLASSES to train and validate on, e.g. ("CAT", "DOG"); None trains on every image.
+# Names from common.CLASSES to train and validate on, e.g. ("CAT", "DOG"); None trains on every image.
 TRAIN_CLASSES = ("CAT", "DOG")
 
 torch.manual_seed(53)
