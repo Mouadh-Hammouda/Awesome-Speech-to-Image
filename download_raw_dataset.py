@@ -126,10 +126,12 @@ def download_missing_images(wav_metadata, executor, image_downloads):
 
 
 def main():
+    print("Checking existing metadata and recordings...", flush=True)
     wav_metadata = {}
     pair_counts = dict.fromkeys(SPLITS, 0)
     pair_totals = dict.fromkeys(SPLITS, 0)
     for split in SPLITS:
+        print(f"{split}: checking local files...", flush=True)
         (RAW_DIR / split).mkdir(parents=True, exist_ok=True)
         if (RAW_DIR / f"SpokenCOCO_{split}.json").exists():
             metadata = read_metadata(split)
@@ -137,18 +139,23 @@ def main():
             pair_totals[split] = get_pair_limit(split, len(metadata))
             existing = sum(get_wav_path(*pair).exists() for pair in metadata.values())
             pair_counts[split] = min(existing, pair_totals[split])
+            print(f"{split}: {pair_counts[split]:,}/{pair_totals[split]:,} recordings already available.", flush=True)
 
     missing_metadata = any(not (RAW_DIR / f"SpokenCOCO_{split}.json").exists() for split in SPLITS)
     missing_audio = any(pair_counts[split] < pair_totals[split] for split in SPLITS)
     with ThreadPoolExecutor(IMAGE_DOWNLOAD_THREADS) as executor:
         image_downloads = {}
         if missing_metadata or missing_audio:
+            print("Opening SpokenCOCO archive; existing recordings are skipped while reading.", flush=True)
             with urllib.request.urlopen(SPOKENCOCO_URL) as response:
-                with tarfile.open(fileobj=response, mode="r|gz") as archive:
-                    download_pairs(archive, executor, image_downloads, wav_metadata, pair_counts, pair_totals)
+                total_bytes = int(response.headers.get("Content-Length", 0)) or None
+                with tqdm.wrapattr(response, "read", total=total_bytes, desc="Archive read") as stream:
+                    with tarfile.open(fileobj=stream, mode="r|gz") as archive:
+                        download_pairs(archive, executor, image_downloads, wav_metadata, pair_counts, pair_totals)
         else:
-            print("Configured recording limits are already satisfied.")
+            print("Configured recording limits are already satisfied.", flush=True)
 
+        print("Checking for missing images...", flush=True)
         download_missing_images(wav_metadata, executor, image_downloads)
         for future in tqdm(as_completed(image_downloads.values()), total=len(image_downloads), desc="Images", unit="image"):
             future.result()
