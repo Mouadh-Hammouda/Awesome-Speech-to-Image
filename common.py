@@ -19,9 +19,20 @@ EMBEDDING_SIZE = 256
 TEMPERATURE = 0.05
 
 # Class name -> caption words that put an image in that class.
+# class_of() uses the first match; keep PEOPLE last so objects take priority.
 CLASSES = {
     "CAT": {"CAT", "CATS", "KITTEN", "KITTENS", "KITTY"},
     "DOG": {"DOG", "DOGS", "PUPPY", "PUPPIES"},
+    "PIZZA": {"PIZZA", "PIZZAS"},
+    "CAR": {"CAR", "CARS", "AUTOMOBILE", "AUTOMOBILES", "TAXI", "TAXIS", "SEDAN", "SEDANS", "SUV", "SUVS"},
+    "BUILDING": {"BUILDING", "BUILDINGS", "HOUSE", "HOUSES", "SKYSCRAPER", "SKYSCRAPERS", "TOWER", "TOWERS"},
+    "PLANE": {"PLANE", "PLANES", "AIRPLANE", "AIRPLANES", "AEROPLANE", "AEROPLANES", "AIRCRAFT", "AIRLINER", "AIRLINERS"},
+    "COMPUTER": {"PC", "COMPUTER", "COMPUTERS", "LAPTOP", "LAPTOPS", "DESKTOP", "MACBOOK", "IMAC"},
+    "PEOPLE": {
+        "PERSON", "PEOPLE", "MAN", "MEN", "WOMAN", "WOMEN", "BOY", "BOYS", "GIRL", "GIRLS",
+        "CHILD", "CHILDREN", "BABY", "BABIES", "KID", "KIDS", "TODDLER", "TODDLERS",
+        "ADULT", "ADULTS", "CROWD", "CROWDS", "HUMAN", "HUMANS", "GENTLEMAN", "GENTLEMEN", "LADY", "LADIES",
+    },
 }
 
 

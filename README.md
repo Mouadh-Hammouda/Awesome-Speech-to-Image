@@ -49,6 +49,10 @@ python3 tools/debugging.py
 
 To print the image CNN architecture, run `python3 models/image_cnn.py`.
 
+Caption classes are defined in `common.py`: `CAT`, `DOG`, `PIZZA`, `CAR`, `BUILDING`, `PLANE`, `COMPUTER` (PCs and laptops), and `PEOPLE`. Filtering matches whole caption words and keeps every caption of a matching image. Diagnostic labels use the first matching class in that order, with `OTHER` for unmatched images.
+
+Choose a training subset with `TRAIN_CLASSES` in `training/train_image_to_caption.py`; its current value is `("CAT", "DOG")`. Set `MODEL_CLASSES` in the search or debugging script to the same subset to load that model. Use `None` for a model trained on all images. Adding class keywords does not retrain existing models.
+
 ## Code layout
 
 ```text

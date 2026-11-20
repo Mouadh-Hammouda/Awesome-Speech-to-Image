@@ -34,6 +34,7 @@ class ImageEncoderCNN(nn.Module):
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
             nn.Linear(256, EMBEDDING_SIZE),
+            nn.Sigmoid()
         )
 
     def forward(self, images):

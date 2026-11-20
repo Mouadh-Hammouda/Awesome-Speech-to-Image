@@ -18,7 +18,7 @@ BATCH_SIZE = 256
 LEARNING_RATE = 1e-2
 RECALL_KS = (1, 5, 10)
 # Names from common.CLASSES to train and validate on, e.g. ("CAT", "DOG"); None trains on every image.
-TRAIN_CLASSES = ("CAT", "DOG")
+TRAIN_CLASSES = ("CAT", "DOG", "COMPUTER", "PEOPLE", "CAR")
 
 torch.manual_seed(53)
 random.seed(53)
@@ -34,7 +34,7 @@ def train_epoch(image_encoder, text_encoder, optimizer, data):
         captions = data.captions[[random.choice(data.image_captions[image]) for image in images.tolist()]].to(device)
         scores = image_encoder(augment(data.images[images]).to(device)) @ text_encoder(captions).T / TEMPERATURE
         targets = torch.arange(len(images), device=device)
-        loss = (F.cross_entropy(scores, targets) + F.cross_entropy(scores.T, targets)) / 2
+        loss = F.cross_entropy(scores, targets) # + F.cross_entropy(scores.T, targets)) / 2
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
