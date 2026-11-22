@@ -7,19 +7,21 @@ import torch
 
 DATA_DIR = Path("data")
 RAW_DIR = Path("data/raw")
+# Resized images and caption vectors, prepared once by the scripts in data_processing/.
+FEATURES_DIR = DATA_DIR / "features"
 SPLITS = ["train", "val"]
 RESULTS_DIR = Path("results/image_to_caption")
 
-LOAD_SIZE = 140
+# Images are cached larger than the CNN's input, so that a random crop still has detail.
+CACHE_SIZE = 224
 IMAGE_SIZE = 128
-MIN_WORD_COUNT = 5
-MAX_CAPTION_WORDS = 40
-PADDING, UNKNOWN = 0, 1
+# The pretrained text model that defines the caption space.
+TEXT_MODEL = "BAAI/bge-m3"
+# The latent space shared by images and captions: the CNN outputs this size, and BGE-M3's 1024 numbers are reduced to it by PCA.
 EMBEDDING_SIZE = 256
-TEMPERATURE = 0.05
 
-# Class name -> caption words that put an image in that class.
-# class_of() uses the first match; keep PEOPLE last so objects take priority.
+# Class name -> caption words that put an image in that class (see data_processing/caption_data.py for how captions vote).
+# These are only for diagnostics; training never sees them.
 CLASSES = {
     "CAT": {"CAT", "CATS", "KITTEN", "KITTENS", "KITTY"},
     "DOG": {"DOG", "DOGS", "PUPPY", "PUPPIES"},
@@ -36,11 +38,13 @@ CLASSES = {
 }
 
 
-def model_file(class_names=None):
-    # A model trained on only some classes gets its own folder, e.g. cat_dog/, so it never overwrites another.
-    if class_names is None:
-        return RESULTS_DIR / "model.pt"
-    return RESULTS_DIR / "_".join(sorted(name.lower() for name in class_names)) / "model.pt"
+def model_file():
+    return RESULTS_DIR / "model.pt"
+
+
+def caption_file(split):
+    # The size is in the name, so these never mix with the full BGE-M3 vectors in {split}_text.npy.
+    return FEATURES_DIR / f"{split}_text_{EMBEDDING_SIZE}.npy"
 
 
 def get_device():
@@ -54,4 +58,4 @@ def get_device():
 def print_progress(label, done, total, start_time):
     elapsed_minutes = (time.monotonic() - start_time) / 60
     remaining_minutes = elapsed_minutes / done * (total - done)
-    print(f"{label}: {done}/{total}  {elapsed_minutes:.0f} min elapsed, ~{remaining_minutes:.0f} min left   ", end="\r")
+    print(f"{label}: {done}/{total}  {elapsed_minutes:.0f} min elapsed, ~{remaining_minutes:.0f} min left   ", end="\r", flush=True)

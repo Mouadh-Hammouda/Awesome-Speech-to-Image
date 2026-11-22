@@ -1,83 +1,68 @@
+"""The cached images and caption vectors of a split."""
 import csv
 import numpy as np
-import random
 import torch
-from collections import Counter
-from PIL import Image
-from common import (
-    CLASSES,
-    DATA_DIR,
-    IMAGE_SIZE,
-    LOAD_SIZE,
-    MAX_CAPTION_WORDS,
-    MIN_WORD_COUNT,
-    PADDING,
-    RAW_DIR,
-    UNKNOWN,
-)
+from common import CACHE_SIZE, CLASSES, DATA_DIR, FEATURES_DIR, caption_file
 
 
-def class_of(words):
-    # The first class whose words appear, else len(CLASSES) for none.
-    return next((index for index, class_words in enumerate(CLASSES.values()) if words & class_words), len(CLASSES))
+# An image has a class only if at least this many of its captions name it: a class word in a single caption is often a background detail.
+MIN_CAPTION_VOTES = 2
 
 
-def build_vocabulary(captions):
-    # Built from the train captions only; rare words share the unknown token.
-    word_counts = Counter(word for caption in captions for word in caption.split())
-    words = sorted(word for word, count in word_counts.items() if count >= MIN_WORD_COUNT)
-    return {word: index for index, word in enumerate(words, start=2)}
+def class_votes(captions):
+    # For each class in CLASSES, how many of the captions (each a set of words) name it.
+    return [sum(bool(words & class_words) for words in captions) for class_words in CLASSES.values()]
 
 
-def tokenise(captions, vocabulary):
-    token_ids = torch.full((len(captions), MAX_CAPTION_WORDS), PADDING)
-    for row, caption in enumerate(captions):
-        words = caption.split()[:MAX_CAPTION_WORDS]
-        token_ids[row, :len(words)] = torch.tensor([vocabulary.get(word, UNKNOWN) for word in words], dtype=torch.long)
-    return token_ids
+def class_labels(captions):
+    # Every class with enough votes: an image can have several classes (a dog in a car) or none.
+    return [votes >= MIN_CAPTION_VOTES for votes in class_votes(captions)]
 
 
-def load_images(split, image_ids):
-    images = [Image.open(RAW_DIR / split / f"{image_id}.jpg").convert("RGB").resize((LOAD_SIZE, LOAD_SIZE)) for image_id in image_ids]
-    return torch.from_numpy(np.stack(images)).permute(0, 3, 1, 2)
-
-
-def keep_images_of_classes(rows, class_names):
-    # An image is kept, with all its captions, if any of its captions mentions one of the classes.
-    class_words = set().union(*(CLASSES[name] for name in class_names))
-    kept_image_ids = {row["image_id"] for row in rows if class_words & set(row["caption"].split())}
-    return [row for row in rows if row["image_id"] in kept_image_ids]
+def main_class(captions):
+    # The index of the one class most captions name, or None if no class has enough votes or two classes tie; for plots that need one colour per image.
+    votes = class_votes(captions)
+    best = max(range(len(votes)), key=votes.__getitem__)
+    clear = votes[best] >= MIN_CAPTION_VOTES and sorted(votes)[-2] < votes[best]
+    return best if clear else None
 
 
 class CaptionSplit:
-    # class_names restricts the split to images of those CLASSES; None keeps every image.
-    def __init__(self, split, vocabulary=None, class_names=None):
+    # Images are the uint8 arrays from cache_images.py, read from disk as needed; captions are the reduced BGE-M3 vectors from reduce_caption_features.py.
+    def __init__(self, split):
+        for file in (FEATURES_DIR / f"{split}_image_ids.txt", FEATURES_DIR / f"{split}_images_{CACHE_SIZE}.npy", caption_file(split)):
+            if not file.exists():
+                raise SystemExit(f"{file} is missing: run the data steps in README.md first (cache_images, extract_caption_features, reduce_caption_features).")
+        image_ids = (FEATURES_DIR / f"{split}_image_ids.txt").read_text().split()
+        image_index = {image_id: index for index, image_id in enumerate(image_ids)}
         with open(DATA_DIR / f"{split}_meta.csv", newline="") as file:
             rows = list(csv.DictReader(file))
-        if class_names is not None:
-            rows = keep_images_of_classes(rows, class_names)
-        captions = [row["caption"] for row in rows]
-        self.vocabulary = vocabulary or build_vocabulary(captions)
-        self.captions = tokenise(captions, self.vocabulary)
-        row_image_ids = [row["image_id"] for row in rows]
-        image_ids = sorted(set(row_image_ids))
-        image_index = {image_id: index for index, image_id in enumerate(image_ids)}
-        self.caption_images = torch.tensor([image_index[image_id] for image_id in row_image_ids])
-        self.image_captions = [[] for _ in image_ids]
-        for row, image in enumerate(self.caption_images.tolist()):
-            self.image_captions[image].append(row)
-        self.images = load_images(split, image_ids)
+        # Row i of the captions is row i of the metadata; caption_images[i] is the image it describes.
+        self.caption_images = torch.tensor([image_index[row["image_id"]] for row in rows])
+        self.captions = torch.from_numpy(np.load(caption_file(split))).float()
+        self.images = np.load(FEATURES_DIR / f"{split}_images_{CACHE_SIZE}.npy", mmap_mode="r")
+        # Each image's classes (one column per class in CLASSES) from the words of its captions, for the class-level metrics.
+        image_captions = [[] for _ in image_ids]
+        for row, image in zip(rows, self.caption_images.tolist()):
+            image_captions[image].append(set(row["caption"].split()))
+        self.image_classes = torch.tensor([class_labels(captions) for captions in image_captions])
+        # One class per image for the confusion matrix: main_class, or len(CLASSES) (OTHER) when there is none.
+        main_classes = [main_class(captions) for captions in image_captions]
+        self.image_main_classes = torch.tensor([len(CLASSES) if index is None else index for index in main_classes])
 
+    def __len__(self):
+        return len(self.images)
 
-def crop(images, top, left):
-    return images[:, :, top:top + IMAGE_SIZE, left:left + IMAGE_SIZE]
+    def load_images(self, indices):
+        # Reading the memory-mapped file in index order is faster; the result keeps the order of `indices`.
+        order = np.argsort(indices.numpy())
+        images = np.empty((len(indices), *self.images.shape[1:]), dtype=np.uint8)
+        images[order] = self.images[indices.numpy()[order]]
+        return torch.from_numpy(images)
 
-
-def augment(images):
-    images = crop(images, random.randint(0, LOAD_SIZE - IMAGE_SIZE), random.randint(0, LOAD_SIZE - IMAGE_SIZE))
-    return torch.where(torch.rand(len(images), 1, 1, 1) < 0.5, images.flip(3), images)
-
-
-def centre_crop(images):
-    margin = (LOAD_SIZE - IMAGE_SIZE) // 2
-    return crop(images, margin, margin)
+    def batch_captions(self, images):
+        # All the captions of the given images, and for each one the position in `images` of the image it describes.
+        position = torch.full((len(self),), -1)
+        position[images] = torch.arange(len(images))
+        captions = torch.nonzero(position[self.caption_images] >= 0).squeeze(1)
+        return self.captions[captions], position[self.caption_images[captions]]

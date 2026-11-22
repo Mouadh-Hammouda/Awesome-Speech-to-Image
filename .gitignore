@@ -10,7 +10,7 @@ __pycache__/
 
 # Data related
 data/
-results/
+results/*
 
 # Model related
 wav2vec2_checkpoints/

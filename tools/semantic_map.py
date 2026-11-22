@@ -1,9 +1,8 @@
-"""Semantic map: images and their captions projected to 2-D in the shared embedding space, coloured by class."""
+"""Semantic map: images and their captions projected to 2-D, side by side, coloured by class."""
 
 import csv
 import signal
 import sys
-from collections import Counter
 from pathlib import Path
 
 # Allow direct execution from the repository root: python3 tools/semantic_map.py.
@@ -13,43 +12,44 @@ if __package__ in (None, ""):
 import numpy as np
 import torch
 import torch.nn.functional as F
+import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
-from common import CLASSES, DATA_DIR, model_file
-from data_processing.caption_data import tokenise
-from retrieval.caption_retrieval import BATCH_SIZE, device, embed_split, load_encoders
+from common import CLASSES, DATA_DIR, caption_file, model_file
+from data_processing.caption_data import MIN_CAPTION_VOTES, main_class
+from retrieval.caption_retrieval import embed_split, load_image_encoder
 
 SPLIT = "val"
-# The TRAIN_CLASSES the model to map was trained on; None is the model trained on every image.
-MODEL_CLASSES = ("CAT", "DOG", "COMPUTER", "PEOPLE", "CAR")
 # Names from common.CLASSES to show, e.g. ("CAT", "DOG"); None shows every class.
 MAP_CLASSES = ("CAT", "DOG", "COMPUTER", "PEOPLE", "CAR")
+# Also draw the split's other images (no clear class, or a class not shown) as grey dots, so the classes are seen against everything else.
+SHOW_OTHER_IMAGES = True
 # "tsne" separates clusters best; "pca" is instant and needs no scikit-learn.
 METHOD = "tsne"
 PERPLEXITY = 30
-# An image belongs to a class if at least this many of its captions name it and no other class ties with it.
-MIN_CAPTION_VOTES = 2
 HOVER_PIXELS = 6
 THUMBNAIL_SIZE = 200
 TOOLTIP_OFFSET = 130
 HOVER_CAPTIONS = 3
+OTHER_COLOUR = "#c8c8c8"
 
 
 def read_captions(split):
-    captions = {}
+    # Each image's captions and, for each, its row in the metadata (which is its row in the caption vectors).
+    captions, rows = {}, {}
     with open(DATA_DIR / f"{split}_meta.csv", newline="") as file:
-        for row in csv.DictReader(file):
+        for row_number, row in enumerate(csv.DictReader(file)):
             captions.setdefault(row["image_id"], []).append(row["caption"])
-    return captions
+            rows.setdefault(row["image_id"], []).append(row_number)
+    return captions, rows
 
 
 def image_class(captions):
-    votes = Counter(name for caption in captions for name, class_words in CLASSES.items() if set(caption.split()) & class_words)
-    best = votes.most_common(2)
-    clear = best and best[0][1] >= MIN_CAPTION_VOTES and (len(best) == 1 or best[1][1] < best[0][1])
-    return best[0][0] if clear else None
+    # The class name of the image if it has one clear class (the same rule as the training metrics), else None.
+    index = main_class([set(caption.split()) for caption in captions])
+    return None if index is None else list(CLASSES)[index]
 
 
 def centred(embeddings):
@@ -69,68 +69,82 @@ def project(points):
     return TSNE(n_components=2, perplexity=PERPLEXITY, init="pca", random_state=0).fit_transform(points.numpy())
 
 
-@torch.no_grad()
-def embed_captions(text_encoder, vocabulary, captions):
-    batches = tokenise(captions, vocabulary).split(BATCH_SIZE * 32)
-    return torch.cat([text_encoder(batch.to(device)) for batch in batches]).cpu()
-
-
 def main():
     class_names = list(MAP_CLASSES or CLASSES)
     unknown = [name for name in class_names if name not in CLASSES]
     if unknown:
         raise SystemExit(f"MAP_CLASSES {unknown} are not in common.CLASSES ({', '.join(CLASSES)})")
 
-    image_encoder, text_encoder, vocabulary = load_encoders(MODEL_CLASSES)
-    image_files, image_embeddings = embed_split(image_encoder, SPLIT, MODEL_CLASSES)
-    captions_of = read_captions(SPLIT)
+    image_encoder = load_image_encoder()
+    image_files, image_embeddings = embed_split(image_encoder, SPLIT)
+    captions_of, rows_of = read_captions(SPLIT)
 
-    # Only images with a clear class are mapped, together with all of their captions.
+    # Images with a clear class are mapped together with all of their captions; the rest only as grey context.
     image_classes = [image_class(captions_of.get(image_file.stem, [])) for image_file in image_files]
     kept = [image for image, name in enumerate(image_classes) if name in class_names]
     if not kept:
         raise SystemExit(f"No {SPLIT} images have a clear class among {', '.join(class_names)}")
-    caption_texts, caption_images = [], []
+    others = [image for image, name in enumerate(image_classes) if name not in class_names] if SHOW_OTHER_IMAGES else []
+    caption_texts, caption_images, caption_rows = [], [], []
     for image in kept:
-        for caption in captions_of[image_files[image].stem]:
+        for caption, row in zip(captions_of[image_files[image].stem], rows_of[image_files[image].stem]):
             caption_texts.append(caption)
             caption_images.append(image)
+            caption_rows.append(row)
 
-    image_points = centred(image_embeddings[kept].cpu())
-    caption_points = centred(embed_captions(text_encoder, vocabulary, caption_texts))
-    print(f"projecting {len(kept):,} images and {len(caption_texts):,} captions with {METHOD}...", flush=True)
-    positions = project(torch.cat([image_points, caption_points]))
-    image_positions, caption_positions = positions[:len(kept)], positions[len(kept):]
+    mapped_images = kept + others
+    image_points = centred(image_embeddings[mapped_images].cpu())
+    # The caption vectors were computed once, so no text model is needed here.
+    caption_points = centred(torch.from_numpy(np.load(caption_file(SPLIT), mmap_mode="r")[caption_rows]))
+    # Each space gets its own projection: a caption and its image are only about 0.25 apart in cosine, so one joint
+    # projection would put all images on one side and all captions on the other. Matching colours show the alignment.
+    print(f"projecting {len(mapped_images):,} images and {len(caption_texts):,} captions with {METHOD}...", flush=True)
+    image_positions, caption_positions = project(image_points), project(caption_points)
     image_colours = np.array([class_names.index(image_classes[image]) for image in kept])
     caption_colours = np.array([class_names.index(image_classes[image]) for image in caption_images])
 
-    figure, axis = plt.subplots(figsize=(11, 9))
-    colours = plt.get_cmap("tab20").colors
-    for index, name in enumerate(class_names):
-        colour = colours[index % len(colours)]
-        axis.scatter(*caption_positions[caption_colours == index].T, marker="x", s=14, linewidths=0.8, alpha=0.5, color=colour)
-        axis.scatter(*image_positions[image_colours == index].T, marker="o", s=30, edgecolors="white", linewidths=0.6, color=colour, label=name)
-    axis_name = "t-SNE" if METHOD == "tsne" else "PC"
-    axis.set(xlabel=f"{axis_name} 1", ylabel=f"{axis_name} 2")
-    axis.set_title(f"{SPLIT} images (o) and their captions (x), coloured by class ({model_file(MODEL_CLASSES)})", fontsize=11)
-    class_legend = axis.legend(loc="upper left", fontsize=8, frameon=False, bbox_to_anchor=(1, 1))
-    axis.add_artist(class_legend)
-    modalities = [Line2D([], [], marker="o", linestyle="", color="grey", label="image"),
-                  Line2D([], [], marker="x", linestyle="", color="grey", label="caption")]
-    axis.legend(handles=modalities, loc="lower left", fontsize=8, frameon=False, bbox_to_anchor=(1, 0))
-    figure.tight_layout()
-    output_file = model_file(MODEL_CLASSES).parent / f"{SPLIT}_semantic_map.png"
+    figure, (image_axis, caption_axis) = plt.subplots(1, 2, figsize=(17, 8.5))
+    colours = plt.get_cmap("tab10").colors
+    if others:
+        image_axis.scatter(*image_positions[len(kept):].T, marker="o", s=8, linewidths=0, color=OTHER_COLOUR, zorder=1)
+    draw_classes(image_axis, image_positions[:len(kept)], image_colours, class_names, colours, marker="o", size=30)
+    draw_classes(caption_axis, caption_positions, caption_colours, class_names, colours, marker="x", size=14)
+    image_axis.set_title(f"{SPLIT} images, embedded by the CNN", fontsize=12)
+    caption_axis.set_title(f"their captions, embedded by the text model (the CNN's target)", fontsize=12)
+    handles = [Line2D([], [], marker="o", linestyle="", color=colours[index % len(colours)], label=f"{name} ({int((image_colours == index).sum())} images)") for index, name in enumerate(class_names)]
+    if others:
+        handles.append(Line2D([], [], marker="o", linestyle="", markersize=4, color=OTHER_COLOUR, label=f"other images ({len(others)})"))
+    figure.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
+    figure.suptitle(f"{METHOD} map; an image's class is the one at least {MIN_CAPTION_VOTES} of its captions name ({model_file()})", fontsize=9, color="grey")
+    figure.tight_layout(rect=(0, 0.05, 1, 0.97))
+    output_file = model_file().parent / f"{SPLIT}_semantic_map.png"
     figure.savefig(output_file, dpi=150)
     print(f"wrote {output_file}")
 
-    # Hovering an image shows its first captions; hovering a caption shows that caption and its image.
-    hover_images = [image_files[image] for image in kept + caption_images]
-    hover_texts = ["\n".join(caption.capitalize() for caption in captions_of[image_files[image].stem][:HOVER_CAPTIONS]) for image in kept]
-    hover_texts += [caption.capitalize() for caption in caption_texts]
-    show_on_hover(figure, axis, positions, hover_images, hover_texts)
+    # Hovering an image shows it with its first captions; hovering a caption shows that caption and its image.
+    image_texts = ["\n".join(caption.capitalize() for caption in captions_of[image_files[image].stem][:HOVER_CAPTIONS]) for image in mapped_images]
+    show_on_hover(figure, image_axis, image_positions, [image_files[image] for image in mapped_images], image_texts)
+    show_on_hover(figure, caption_axis, caption_positions, [image_files[image] for image in caption_images], [caption.capitalize() for caption in caption_texts])
     wake_timer = close_on_ctrl_c(figure)
     plt.show()
     wake_timer.stop()
+
+
+def draw_classes(axis, positions, colours_of, class_names, colours, marker, size):
+    for index, name in enumerate(class_names):
+        colour = colours[index % len(colours)]
+        points = positions[colours_of == index]
+        if marker == "x":
+            axis.scatter(*points.T, marker=marker, s=size, linewidths=0.8, alpha=0.6, color=colour, zorder=2)
+        else:
+            axis.scatter(*points.T, marker=marker, s=size, edgecolors="white", linewidths=0.5, color=colour, zorder=2)
+        # The class name at the middle of its points, so the map reads without the legend.
+        label = axis.text(*np.median(points, axis=0), name, color=colour, fontsize=11, fontweight="bold", ha="center", va="center", zorder=3)
+        label.set_path_effects([path_effects.withStroke(linewidth=3, foreground="white")])
+    axis.set_xticks([])
+    axis.set_yticks([])
+    for side in axis.spines.values():
+        side.set_visible(False)
 
 
 def close_on_ctrl_c(figure):

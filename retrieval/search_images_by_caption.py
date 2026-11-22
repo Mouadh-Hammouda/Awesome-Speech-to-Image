@@ -1,4 +1,3 @@
-import re
 import sys
 from pathlib import Path
 
@@ -10,26 +9,26 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RadioButtons, TextBox
 from PIL import Image
-from data_processing.caption_data import tokenise
-from retrieval.caption_retrieval import BATCH_SIZE, device, embed_split, load_encoders
+from models.caption_text_encoder import CaptionTextEncoder
+from common import FEATURES_DIR, RAW_DIR
+from retrieval.caption_retrieval import device, load_image_encoder
+from retrieval.improved_search import search_index, search_scores
 
-SEARCH_SPLITS = ("val", "train", "test")
-# The TRAIN_CLASSES the model to search with was trained on; None is the model trained on every image.
-MODEL_CLASSES = None
+SEARCH_SPLITS = ("val", "train")
 TOP_K = 10
 GRID_ROWS, GRID_COLUMNS = 2, 5
 
 
-def clean_caption(caption):
-    # The training captions are uppercase letters and digits only.
-    return re.sub(r"[^A-Z0-9 ]", "", caption.upper())
-
-
 @torch.no_grad()
-def find_matches(caption, text_encoder, vocabulary, image_embeddings):
-    scores = text_encoder(tokenise([caption], vocabulary).to(device)) @ image_embeddings.T
+def find_matches(caption, text_encoder, image_embeddings, image_hubness):
+    scores = search_scores(text_encoder.embed([caption]).to(device), image_embeddings, image_hubness)
     top_scores, top_images = scores[0].topk(min(TOP_K, len(image_embeddings)))
     return top_images.tolist(), top_scores.tolist()
+
+
+def load_split(image_encoder, split):
+    image_ids = (FEATURES_DIR / f"{split}_image_ids.txt").read_text().split()
+    return [RAW_DIR / split / f"{image_id}.jpg" for image_id in image_ids], *search_index(image_encoder, split, device)
 
 
 def show_matches(axes, image_files, scores):
@@ -43,9 +42,10 @@ def show_matches(axes, image_files, scores):
 
 def main():
     print("Loading model...", flush=True)
-    image_encoder, text_encoder, vocabulary = load_encoders(MODEL_CLASSES)
+    image_encoder = load_image_encoder()
+    text_encoder = CaptionTextEncoder(device)
     # Fetched the first time each split is selected, so startup only pays for the first one.
-    embedded_splits = {SEARCH_SPLITS[0]: embed_split(image_encoder, SEARCH_SPLITS[0], MODEL_CLASSES)}
+    embedded_splits = {SEARCH_SPLITS[0]: load_split(image_encoder, SEARCH_SPLITS[0])}
 
     figure, axes = plt.subplots(GRID_ROWS, GRID_COLUMNS, figsize=(15, 8))
     figure.canvas.manager.set_window_title("Caption search")
@@ -57,18 +57,13 @@ def main():
     text_box = TextBox(figure.add_axes([0.14, 0.04, 0.84, 0.05]), "Caption ")
 
     def search(typed_caption):
-        caption = clean_caption(typed_caption)
-        words = caption.split()
-        if not words:
+        caption = typed_caption.strip()
+        if not caption:
             return
-        unknown_words = [word for word in words if word not in vocabulary]
-        if len(unknown_words) == len(words):
-            figure.suptitle("None of those words are in the vocabulary, try different ones")
-        else:
-            image_files, image_embeddings = embedded_splits[split_buttons.value_selected]
-            top_images, top_scores = find_matches(caption, text_encoder, vocabulary, image_embeddings)
-            show_matches(axes, [image_files[image] for image in top_images], top_scores)
-            figure.suptitle(f"{split_buttons.value_selected}: {caption}" + (f"\nNot in the vocabulary: {', '.join(unknown_words)}" if unknown_words else ""))
+        image_files, image_embeddings, image_hubness = embedded_splits[split_buttons.value_selected]
+        top_images, top_scores = find_matches(caption, text_encoder, image_embeddings, image_hubness)
+        show_matches(axes, [image_files[image] for image in top_images], top_scores)
+        figure.suptitle(f"{split_buttons.value_selected}: {caption}")
         figure.canvas.draw_idle()
 
     def change_split(split):
@@ -76,7 +71,7 @@ def main():
             figure.suptitle(f"Loading {split} images...")
             figure.canvas.draw()
             figure.canvas.flush_events()
-            embedded_splits[split] = embed_split(image_encoder, split, MODEL_CLASSES)
+            embedded_splits[split] = load_split(image_encoder, split)
             figure.suptitle(f"{split} ready, type a caption below and press Enter")
             figure.canvas.draw_idle()
         search(text_box.text)

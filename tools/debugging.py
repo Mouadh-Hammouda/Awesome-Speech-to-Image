@@ -14,15 +14,15 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
 from sklearn.metrics import ConfusionMatrixDisplay
-from data_processing.caption_data import CLASSES, class_of, tokenise
-from retrieval.caption_retrieval import BATCH_SIZE, device, embed_split, load_encoders
-from training.train_image_to_caption import TEMPERATURE
-from common import DATA_DIR
+from data_processing.caption_data import class_votes, main_class
+from models.caption_text_encoder import CaptionTextEncoder
+from retrieval.caption_retrieval import device, embed_split, load_image_encoder
+from common import CLASSES, DATA_DIR, caption_file
 
 SPLIT = "val"
-# The TRAIN_CLASSES the model to debug was trained on; None is the model trained on every image.
-MODEL_CLASSES = ("CAT", "DOG")
-# Images that mention none of the CLASSES are OTHER.
+# The softmax temperature for turning image-to-class similarities into probabilities (these plots are only a diagnostic).
+TEMPERATURE = 0.05
+# Images without one clear class (see caption_data.main_class) are OTHER.
 CLASS_NAMES = [*CLASSES, "OTHER"]
 HOVER_PIXELS = 6
 
@@ -33,27 +33,28 @@ def read_captions(split):
 
 
 def true_classes(image_files):
-    words = {}
+    captions = {}
     for image_id, caption in read_captions(SPLIT):
-        words.setdefault(image_id, set()).update(caption.split())
-    return torch.tensor([class_of(words[image_file.stem]) for image_file in image_files])
+        captions.setdefault(image_id, []).append(set(caption.split()))
+    classes = [main_class(captions[image_file.stem]) for image_file in image_files]
+    return torch.tensor([len(CLASSES) if index is None else index for index in classes])
 
 
-def class_embeddings(text_encoder, vocabulary):
-    named = text_encoder(tokenise(list(CLASSES), vocabulary).to(device))
-    # OTHER has no caption of its own, so it is the mean embedding of the train captions that mention no class.
-    other_captions = [caption for _, caption in read_captions("train") if class_of(set(caption.split())) == len(CLASSES)]
-    other = torch.cat([text_encoder(batch.to(device)) for batch in tokenise(other_captions, vocabulary).split(BATCH_SIZE * 32)])
+def class_embeddings(text_encoder):
+    named = text_encoder.embed(list(CLASSES))
+    # OTHER has no caption of its own, so it is the mean vector of the train captions that mention no class.
+    other_rows = [row for row, (_, caption) in enumerate(read_captions("train")) if not any(class_votes([set(caption.split())]))]
+    other = torch.from_numpy(np.load(caption_file("train"), mmap_mode="r")[other_rows])
     return torch.cat([named, F.normalize(other.mean(dim=0), dim=0).unsqueeze(0)])
 
 
 @torch.no_grad()
 def main():
-    image_encoder, text_encoder, vocabulary = load_encoders(MODEL_CLASSES)
-    image_files, image_embeddings = embed_split(image_encoder, SPLIT, MODEL_CLASSES)
+    image_encoder = load_image_encoder()
+    image_files, image_embeddings = embed_split(image_encoder, SPLIT)
     labels = true_classes(image_files)
 
-    probabilities = (image_embeddings.to(device) @ class_embeddings(text_encoder, vocabulary).T / TEMPERATURE).softmax(dim=1).cpu()
+    probabilities = (image_embeddings.to(device) @ class_embeddings(CaptionTextEncoder(device)).to(device).T / TEMPERATURE).softmax(dim=1).cpu()
     plot_class_circle(image_files, probabilities, labels)
     plot_confusion_matrix(probabilities, labels)
     plt.show()
